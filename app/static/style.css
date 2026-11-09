@@ -1,0 +1,114 @@
+:root {
+  --base: #e6ebf0;
+  --panel: #ffffff;
+  --ink: #1b2a3a;
+  --muted: #5b6b7c;
+  --line: #c9d2db;
+  --accent: #2457a6;
+  --ok: #2e7d4f;
+  --warn: #b7791f;
+  --bad: #b3261e;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --base: #151c24;
+    --panel: #1e2732;
+    --ink: #e4eaf0;
+    --muted: #98a6b5;
+    --line: #34424f;
+    --accent: #6f9ce6;
+    --ok: #5cbf86;
+    --warn: #e2a84a;
+    --bad: #ef6b62;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Archivo", "Segoe UI", system-ui, sans-serif;
+  background: var(--base);
+  color: var(--ink);
+  line-height: 1.5;
+}
+.mono { font-family: "JetBrains Mono", Consolas, monospace; font-size: .85rem; word-break: break-all; }
+
+header {
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;
+  padding: 1rem 2rem; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+header h1 { margin: 0; font-size: 1.3rem; font-weight: 700; }
+.status { display: flex; gap: 1.2rem; font-size: .9rem; color: var(--muted); }
+.status span::before {
+  content: ""; display: inline-block; width: .6rem; height: .6rem; border-radius: 50%;
+  margin-right: .4rem; background: var(--line);
+}
+.status .on::before { background: var(--ok); }
+.status .off::before { background: var(--bad); }
+
+.layout { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100vh - 70px); }
+nav { border-right: 1px solid var(--line); padding: 1.5rem 0; }
+nav button {
+  display: block; width: 100%; text-align: left; padding: .7rem 2rem; border: 0;
+  background: none; color: var(--muted); font: inherit; cursor: pointer; border-left: 3px solid transparent;
+}
+nav button[aria-selected="true"] { color: var(--ink); font-weight: 600; border-left-color: var(--accent); background: var(--panel); }
+nav button:focus-visible, .btn:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+main { padding: 2rem; max-width: 1000px; }
+section[hidden] { display: none; }
+h2 { margin: 0 0 .3rem; font-size: 1.5rem; }
+.lead { color: var(--muted); margin: 0 0 1.5rem; max-width: 65ch; }
+
+.row { display: flex; gap: .7rem; flex-wrap: wrap; align-items: center; margin-bottom: 1.5rem; }
+input[type=text], input[type=file] {
+  font: inherit; padding: .6rem .8rem; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--panel); color: var(--ink); min-width: 260px;
+}
+.btn {
+  font: inherit; font-weight: 600; padding: .6rem 1.2rem; border-radius: 6px; border: 0;
+  background: var(--accent); color: #fff; cursor: pointer;
+}
+.btn:disabled { opacity: .5; cursor: wait; }
+
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 1.2rem 1.5rem; margin-bottom: 1rem; }
+
+/* Le tampon de verdict : l'élément marquant de l'interface */
+.verdict-wrap { display: flex; gap: 2rem; align-items: center; flex-wrap: wrap; }
+.stamp {
+  font-size: 1.8rem; font-weight: 800; letter-spacing: .04em; padding: .4rem 1.2rem;
+  border: 4px solid currentColor; border-radius: 6px; transform: rotate(-4deg);
+  animation: stamp .25s ease-out;
+}
+.stamp.SAIN { color: var(--ok); }
+.stamp.SUSPECT { color: var(--warn); }
+.stamp.MALVEILLANT { color: var(--bad); }
+@keyframes stamp { from { transform: rotate(-4deg) scale(1.4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .stamp { animation: none; } }
+
+ul.findings { margin: .8rem 0 0; padding-left: 1.2rem; }
+
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.table-wrap { overflow-x: auto; }
+th, td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+
+.sev { font-weight: 700; }
+.sev.CRITICAL, .sev.HIGH { color: var(--bad); }
+.sev.MEDIUM { color: var(--warn); }
+.sev.LOW { color: var(--ok); }
+.cve-solution { margin-top: .6rem; padding: .6rem .8rem; border-left: 3px solid var(--ok); background: var(--base); }
+.cve a { color: var(--accent); }
+
+.error { color: var(--bad); font-weight: 600; }
+.empty { color: var(--muted); }
+
+@media (max-width: 720px) {
+  .layout { grid-template-columns: 1fr; }
+  nav { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 0; }
+  nav button { white-space: nowrap; border-left: 0; border-bottom: 3px solid transparent; padding: .8rem 1rem; }
+  nav button[aria-selected="true"] { border-bottom-color: var(--accent); }
+  main { padding: 1.2rem; }
+}

@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cyber
+      POSTGRES_PASSWORD: cyber
+      POSTGRES_DB: cyberdb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cyber -d cyberdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  clamav:
+    image: clamav/clamav:stable
+    volumes:
+      - clamdb:/var/lib/clamav
+
+  web:
+    build: ./app
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./app:/app   # le code est lu directement : modifier un fichier ne demande pas de rebuild
+    environment:
+      DATABASE_URL: postgresql://cyber:cyber@db:5432/cyberdb
+      CLAMD_HOST: clamav
+      CLAMD_PORT: "3310"
+      BRIDGE_URL: http://host.docker.internal:5001
+      NVD_API_KEY: ""
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      clamav:
+        condition: service_started
+
+volumes:
+  pgdata:
+  clamdb:

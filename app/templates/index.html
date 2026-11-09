@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CyberScan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <h1>CyberScan</h1>
+  <div class="status" id="status">
+    <span id="st-clam">ClamAV</span>
+    <span id="st-esp">Scan WiFi/BT</span>
+    <span id="st-db">Base de données</span>
+  </div>
+</header>
+
+<div class="layout">
+  <nav role="tablist">
+    <button role="tab" data-tab="file" aria-selected="true">Analyser un fichier</button>
+    <button role="tab" data-tab="cve">Vulnérabilités (CVE)</button>
+    <button role="tab" data-tab="wifi">Scan WiFi</button>
+    <button role="tab" data-tab="bluetooth">Scan Bluetooth</button>
+    <button role="tab" data-tab="history">Historique</button>
+  </nav>
+
+  <main>
+    <!-- Fichier -->
+    <section id="tab-file">
+      <h2>Analyser un fichier</h2>
+      <p class="lead">Le fichier est vérifié par ClamAV et par une analyse heuristique (hash connus, extensions, exécutables déguisés, chaînes suspectes).</p>
+      <div class="row">
+        <input type="file" id="file-input">
+        <button class="btn" id="file-btn">Analyser</button>
+      </div>
+      <div id="file-result"></div>
+    </section>
+
+    <!-- CVE -->
+    <section id="tab-cve" hidden>
+      <h2>Vulnérabilités (CVE)</h2>
+      <p class="lead">Recherche dans la base officielle NVD si Internet est disponible, sinon dans la base locale. Tapez * pour tout afficher. Chaque CVE est enregistrée avec une solution proposée.</p>
+      <div class="row">
+        <input type="text" id="cve-input" placeholder="ex. : openssl, wifi, bluetooth, *">
+        <button class="btn" id="cve-btn">Rechercher</button>
+      </div>
+      <div id="cve-result"></div>
+    </section>
+
+    <!-- WiFi -->
+    <section id="tab-wifi" hidden>
+      <h2>Scan WiFi</h2>
+      <p class="lead">La carte WiFi de l'ordinateur (ou un ESP32 en option) liste les réseaux à portée. Les réseaux ouverts ou en WEP sont signalés comme risqués.</p>
+      <div class="row"><button class="btn" data-scan="wifi">Lancer le scan WiFi</button></div>
+      <div id="wifi-result"></div>
+    </section>
+
+    <!-- Bluetooth -->
+    <section id="tab-bluetooth" hidden>
+      <h2>Scan Bluetooth</h2>
+      <p class="lead">Liste les appareils Bluetooth connus de l'ordinateur (ou détectés par un ESP32 en option).</p>
+      <div class="row"><button class="btn" data-scan="bluetooth">Lancer le scan Bluetooth</button></div>
+      <div id="bluetooth-result"></div>
+    </section>
+
+    <!-- Historique -->
+    <section id="tab-history" hidden>
+      <h2>Historique</h2>
+      <p class="lead">Tous les scans et CVE enregistrés dans la base PostgreSQL.</p>
+      <div id="history-result"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+// Onglets
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach(x => x.setAttribute("aria-selected", x === b));
+  document.querySelectorAll("main section").forEach(s => s.hidden = s.id !== "tab-" + b.dataset.tab);
+  if (b.dataset.tab === "history") loadHistory();
+});
+
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || "Erreur " + r.status);
+  return data;
+}
+
+// Statut des services
+async function loadStatus() {
+  try {
+    const s = await api("/api/status");
+    $("#st-clam").className = s.clamav ? "on" : "off";
+    $("#st-esp").className = s.esp32_bridge ? "on" : "off";
+    $("#st-db").className = s.database ? "on" : "off";
+  } catch { $("#st-db").className = "off"; }
+}
+loadStatus(); setInterval(loadStatus, 15000);
+
+// Scan fichier
+$("#file-btn").onclick = async () => {
+  const f = $("#file-input").files[0];
+  const out = $("#file-result");
+  if (!f) { out.innerHTML = '<p class="error">Choisissez un fichier à analyser.</p>'; return; }
+  const btn = $("#file-btn"); btn.disabled = true; btn.textContent = "Analyse…";
+  const fd = new FormData(); fd.append("file", f);
+  try {
+    const r = await api("/api/scan/file", { method: "POST", body: fd });
+    const items = r.details.findings.length
+      ? "<ul class='findings'>" + r.details.findings.map(x => `<li>${esc(x)}</li>`).join("") + "</ul>"
+      : "<p class='empty'>Aucun indicateur suspect.</p>";
+    out.innerHTML = `<div class="card">
+      <div class="verdict-wrap">
+        <div class="stamp ${r.verdict}">${r.verdict}</div>
+        <div><strong>${esc(r.filename)}</strong><br>${r.size} octets · score ${r.details.score}/100 · entropie ${r.details.entropy}<br>Moteur : ${esc(r.engine)}</div>
+      </div>
+      <p class="mono">SHA-256 : ${r.sha256}</p>${items}</div>`;
+  } catch (e) { out.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  btn.disabled = false; btn.textContent = "Analyser";
+};
+
+// CVE
+function cveCard(c) {
+  const refs = (c.references || c.refs || []).map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join("<br>");
+  return `<div class="card cve">
+    <strong>${esc(c.id || c.cve_id)}</strong> — <span class="sev ${esc(c.severity)}">${esc(c.severity)} ${c.score ?? ""}</span>
+    <span class="empty"> publiée le ${esc(c.published)} ${c.cwe ? "· " + esc(c.cwe) : ""} ${c.source ? "· " + esc(c.source) : ""}</span>
+    <p>${esc(c.description)}</p>
+    <div class="cve-solution"><strong>Solution proposée :</strong> ${esc(c.solution)}</div>
+    ${refs ? "<p>" + refs + "</p>" : ""}
+  </div>`;
+}
+$("#cve-btn").onclick = async () => {
+  const q = $("#cve-input").value.trim(), out = $("#cve-result");
+  if (!q) { out.innerHTML = '<p class="error">Indiquez un mot-clé.</p>'; return; }
+  const btn = $("#cve-btn"); btn.disabled = true; btn.textContent = "Recherche…";
+  try {
+    const list = await api("/api/cve?q=" + encodeURIComponent(q));
+    out.innerHTML = list.length ? `<p>${list.length} CVE trouvées et enregistrées.</p>` + list.map(cveCard).join("")
+                                : '<p class="empty">Aucune CVE pour ce mot-clé. Essayez un nom de logiciel.</p>';
+  } catch (e) { out.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  btn.disabled = false; btn.textContent = "Rechercher";
+};
+$("#cve-input").addEventListener("keydown", e => { if (e.key === "Enter") $("#cve-btn").click(); });
+
+// WiFi / Bluetooth
+function wifiTable(devs) {
+  return `<div class="table-wrap"><table><tr><th>SSID</th><th>BSSID</th><th>Canal</th><th>Signal</th><th>Sécurité</th></tr>` +
+    devs.map(d => {
+      const risky = ["OPEN", "WEP"].includes(d.auth);
+      return `<tr><td>${esc(d.ssid || "(caché)")}</td><td class="mono">${esc(d.bssid)}</td><td>${d.channel}</td>
+              <td>${d.rssi} dBm</td><td class="${risky ? "error" : ""}">${esc(d.auth)}${risky ? " — risqué" : ""}</td></tr>`;
+    }).join("") + "</table></div>";
+}
+function btTable(devs) {
+  return `<div class="table-wrap"><table><tr><th>Nom</th><th>Adresse MAC</th><th>Signal / état</th></tr>` +
+    devs.map(d => `<tr><td>${esc(d.name || "(inconnu)")}</td><td class="mono">${esc(d.mac)}</td><td>${d.rssi === "-" ? esc(d.status || "-") : d.rssi + " dBm"}</td></tr>`).join("") +
+    "</table></div>";
+}
+document.querySelectorAll("[data-scan]").forEach(btn => btn.onclick = async () => {
+  const type = btn.dataset.scan, out = $("#" + type + "-result"), label = btn.textContent;
+  btn.disabled = true; btn.textContent = "Scan en cours…";
+  try {
+    const r = await api("/api/scan/" + type, { method: "POST" });
+    out.innerHTML = `<p>${r.devices.length} appareil(s) détecté(s) par ${esc(r.source)}, scan n°${r.id} enregistré.</p>` +
+      (type === "wifi" ? wifiTable(r.devices) : btTable(r.devices));
+  } catch (e) { out.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  btn.disabled = false; btn.textContent = label;
+});
+
+// Historique
+async function loadHistory() {
+  const out = $("#history-result");
+  try {
+    const [files, nets, cves] = await Promise.all([api("/api/scans/files"), api("/api/scans/network"), api("/api/cves")]);
+    out.innerHTML = `
+      <h3>Fichiers analysés (${files.length})</h3>
+      <div class="table-wrap"><table><tr><th>Date</th><th>Fichier</th><th>Verdict</th><th>Moteur</th></tr>
+      ${files.map(f => `<tr><td>${esc(f.created_at)}</td><td>${esc(f.filename)}</td><td><strong class="sev ${f.verdict === "SAIN" ? "LOW" : f.verdict === "SUSPECT" ? "MEDIUM" : "HIGH"}">${f.verdict}</strong></td><td>${esc(f.engine)}</td></tr>`).join("")}
+      </table></div>
+      <h3>Scans réseau (${nets.length})</h3>
+      <div class="table-wrap"><table><tr><th>Date</th><th>Type</th><th>Appareils</th></tr>
+      ${nets.map(n => `<tr><td>${esc(n.created_at)}</td><td>${esc(n.scan_type)}</td><td>${n.device_count}</td></tr>`).join("")}
+      </table></div>
+      <h3>CVE enregistrées (${cves.length})</h3>
+      <div class="table-wrap"><table><tr><th>CVE</th><th>Gravité</th><th>Mot-clé</th></tr>
+      ${cves.map(c => `<tr><td>${esc(c.cve_id)}</td><td class="sev ${esc(c.severity)}">${esc(c.severity)} ${c.score ?? ""}</td><td>${esc(c.keyword)}</td></tr>`).join("")}
+      </table></div>`;
+  } catch (e) { out.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+}
+</script>
+</body>
+</html>
